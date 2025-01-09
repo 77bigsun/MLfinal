@@ -1,114 +1,139 @@
-# MLfinal
+Jane Street Real-Time Market Data Forecasting
+===
 
-December 27, 2012
-
-
-IEEEtran is a LaTeX class for authors of the Institute of Electrical and
-Electronics Engineers (IEEE) transactions journals and conferences.
-The latest version of the IEEEtran package can be found at CTAN:
-
-http://www.ctan.org/tex-archive/macros/latex/contrib/IEEEtran/
-
-as well as within IEEE's site:
-
-http://www.ieee.org/
-
-For latest news, helpful tips, answers to frequently asked questions,
-beta releases and other support, visit the IEEEtran home page at my
-website:
-
-http://www.michaelshell.org/tex/ieeetran/
-
-V1.8 is a significant update over the 1.7a release. For a full list of
-changes, please read the file changelog.txt. The most notable changes
-include:
+### 討論大綱
+- **資料介紹及分割**
+    - 特徵介紹
+    - 資料長度與分割
+- **敘述性統計**
+    - 離群值分析
+    - 特徵相關性
+- **資料前處理**
+    - 遺失值補值
+    - 多重共線性特徵處理
+    - 增加滯後項
+- **模型建立**
+    - 預備階段: Bagging
+    - 第一階段: XGBoost建立及參數介紹
+    - 第二階段: 預測結果加權平均
+- **效能評估**
+    - 整體表現
+    - 模型收斂情況
 
 
- 1) New transmag class option to support the IEEE Transactions on Magnetics
-    format. Thanks to Wei Yingkang, Sangmin Suh and Benjamin Gaussens
-    for suggestions and beta testing.
+### 資料介紹及分割
+**特徵介紹**
+- ID
+    - symbol_id: 金融工具編號，共39種
+    - date_id: 日期編號
+    - time_id: 時間戳編號 ==(不等距)==
+- 特徵**X**: feature00~feature78、lags ==(依個人需求)==
+- 目標**y**: responder_6
+- 注意事項: 總訓練資料依照金融編號分為**十組** (partitions=10)
 
- 2) The \IEEEcompsoctitleabstractindextext and 
-    \IEEEdisplaynotcompsoctitleabstractindextext
-    commands have been deprecated in favor of their
-    \IEEEtitleabstractindextext and \IEEEdisplaynontitleabstractindextext
-    (observe that the "not" has changed to "non") equivalents. This change
-    generalizes and decouples them from compsoc mode because the new
-    transmag mode also uses them now.
+**資料長度及分割**
+- 資料集分割: 8:2，stratify by partitions
+  ![output](https://hackmd.io/_uploads/rkAXYTnrJg.png)
+  >圖一、partition總佔比及數量圖
 
- 3) Added new *-forms of \IEEEyesnumber*, \IEEEnonumber*, \IEEEyessubnumber*,
-    and \IEEEnosubnumber* (the non-star form of the latter is also new) which
-    persist across IEEEeqnarray lines until countermanded. To provide for
-    continued subequations across instances of IEEEeqnarrays as well as for
-    subequations that follow a main equation (e.g., 14, 14a, 14b ...)
-    \IEEEyessubnumber no longer automatically increments the equation number
-    on it's first invocation of a subequation group. Invoke both
-    \IEEEyesnumber\IEEEyessubnumber together to start a new
-    equation/subequation group.
- 
- 4) Hyperref links now work with IEEEeqnarray equations.
-    Thanks to Stefan M. Moser for reporting this problem.
+### 敘述性統計
+**離群值分析**
+![output](https://hackmd.io/_uploads/Hkc7hahHyg.png)
+>圖二、全距與50%IQR、99%IQR比較圖。Y軸為一般定義的50%IQR，點越靠近紅線代表該資料分布越穩定，較無離群值。左圖為全距與50%IQR比較圖，右圖則為99%IQR及50%IQR比較圖。右圖我們可以看出所有特徵點基本上都接近45度線，甚至分配可以繪製成一條與其平行的線，說明特徵的穩定性，但左圖將最極端的1%數值帶入後，許多點都遠離了45度線，這說明了該特徵包含離群值。
 
- 5) Revised spacing at top of top figures and tables to better
-    align with the top main text lines as IEEE does in its journals. 
-    Thanks to Dirk Beyer for reporting this issue and beta testing.
+圖二表示所有特徵中有佔比不小的特徵包含離群值，但由於金融類資料變數非常多，有時這些數值反而代表我們學習其變化性的關鍵因子，故不處理。
+
+**特徵相關性**
+![output](https://hackmd.io/_uploads/H1BElAnrye.png)
+>圖三、相關係數矩陣
+
+由於許多特徵包含了離群值，因此若使用Pearson相關係數可能會因其離群值特性使得相關性遭誤判。為防範此情況，相關係數我們改用Kendall's tau，其作法主要是將兩變數做排名再計算相關係數，因不會直接用到數值部分，因此表現相對穩定。
+>備註：實際上有更好的相關係數選擇，在2020年發表的論文The new coefficient of correlation，其相關係數可以準確偵測到非線性的關係，但由於計算上會消耗太多時間故此也不考慮。
+
+從圖三我們可以觀察到，許多變數之間彼此皆有相關聯，在之後訓練模型計算中可能因為多重共線性的問題而導致計算被誤導，為此我們後續將以0.3作為閾值做處理。
+
+### 資料前處理
+**遺失值處理**
+- 79種feature中，有離群值之feature共31個 (39.24%)
+- 離群值數量最多佔該特徵約17.9%
+- **處理方式:** 補0，以穩定模型同時有代表性 (無特徵資料包含0)
+
+**多重共線性特徵處理**
+
+從圖三我們可以觀察到特徵間隱含多重共線性的問題，因此為選出一個代表性特徵代表其資訊但同時也不喪失在其間可能隱含的較小個別資訊，在此我們將使用 Louvain圖算法對特徵做分群以作為合併其特徵的依據。Louvain 算法是一種基於模塊度（Modularity）的分群方法，目的是將節點劃分為內部邊密集、外部邊稀疏的社群。通過最大化網絡的模塊度來實現高效分群。
+
+![output_compressed](https://hackmd.io/_uploads/B1IuIRnBye.jpg)
+>圖四、Louvain社群網路圖。
+
+如圖四所示，我們以計算相關係數時得出的結果為基準，若相關係數大於0.3我們就視為兩特徵之間是有關連的。依照Louvain圖算法，我們可以將特徵分為17組以利接下來做特徵合併的動作。
+接下來依照分組結果作特徵合併，我們會有以下三步驟:
+
+1. 依照組別間該特徵對其他變數的相關係數取平均數
+2. 依照該組所有特徵平均相關係數做比例權重分配
+3. 依照權重分配做加權平均得到新特徵
+
+以上步驟可以使群組間也能取出相對具有代表性的特徵，越具代表性比例權重越高
+
+**增加滯後項**
+
+由於金融數據預測通常屬於時間序列資料，與前一筆結果有巨大相關性，為使資料間捕捉其順序性，我們增加前一天responder_6的數值作為預測參考。
+
+### 模型建立
+**預備階段：** Bagging
+我們依照十個partition來隨機挑選三個來個別建立十個XGBoost模型，選擇這種訓練資料分割方式主要是為了讓每個模型彼此之間可以相關，也因為本資料量足夠大讓我們可以用此方式建立模型。表一為各個partition的使用情況，可以看到每個partition的使用情況大致均勻。
+>表一、partition抽取情況
+
+| partition | 次數 |
+|:--:|:--:|
+| 0 | 2 |
+| 1 | 4 |
+| 2 | 3 |
+| 3 | 3 |
+| 4 | 4 |
+| 5 | 4 |
+| 6 | 3 |
+| 7 | 2 |
+| 8 | 2 |
+| 9 | 3 |
+
+**第一階段：** XGBoost建立及參數介紹
+由於為了使計算速度快速，在盡量保留運算效能情況下，我們選擇了相對速度較快的超參數組合。表二為超參數組合介紹：
+
+>表二、XGBoost超參數表
+
+|名稱|作用|值|
+|:--:|:--:|:--:|
+|learning_rate|梯度參數|0.03|
+|max_depth|樹深度|6|
+|min_child_weight|分裂最小樣本數|5|
+|subsample|每棵樹處理之資料比例|0.6|
+|colsample_bytree|對樹的特徵採樣比例|0.6|
+|colsample_bylevel|對階層的特徵採樣比例|0.6|
+|gamma|防止過擬合|0.5|
+|lambda|L2正則化權重|2|
+|alpha|L1正則化權重|0.5|
+|n_estimators|驗證batch數量|3000|
+|max_bin|分箱數|32|
+
+**第二階段：** 預測結果加權平均
+為了整合十個XGBoost預測出來的結果，我們會再依照各個模型的MSE作為標準計算權重以得出最終加權平均的預測結果。權重計算公式如下：
+![IMG_0110](https://hackmd.io/_uploads/rJvwGUTrJg.jpg)
+其中wi為每個模型被分配至的權重，位於0～1之間。若MSE越小，被分配到的權重比例就越高。
+
+### 效能評估
+**整體表現**
+![IMG_0113](https://hackmd.io/_uploads/SydQFIar1x.jpg)
+>圖五、模型MSE效能比較圖
+
+圖五比較十個XGBoost模型的預測效能以及加權平均後的比較。從中我們可以看到大致而言除了Model2表現稍差之外，基本上模型預測結果穩定。除此之外，當我們看到加權平均後的結果，就可發現其表現比任一XGBoost還好，由此可說明加權平均各個模型預測結果有助於提升預測效能。
+
+**模型收斂情況**
+
+![IMG_0114](https://hackmd.io/_uploads/ByZixOaBkl.jpg)
+>圖六、模型平均收斂情況
+
+由圖六可以看到模型隨著訓練有穩定收斂的狀況，還有機會透過學習率提升而訓練更好的結果。但實際上，當提升了學習率時，雖然訓練之MSE更低，但Overfitting的狀況十分嚴重，因此就沒有進行進一步的訓練。
 
 
-Best wishes for all your publication endeavors,
-
-Michael Shell
-http://www.michaelshell.org/
 
 
-********************************** Files **********************************
-
-README                 - This file.
-
-IEEEtran.cls           - The IEEEtran LaTeX class file.
-
-changelog.txt          - The revision history.
-
-IEEEtran_HOWTO.pdf     - The IEEEtran LaTeX class user manual.
-
-bare_conf.tex          - A bare bones starter file for conference papers.
-
-bare_jrnl.tex          - A bare bones starter file for journal papers.
-
-bare_jrnl_compsoc.tex  - A bare bones starter file for Computer Society
-                         journal papers.
-
-bare_jrnl_transmag.tex - A bare bones starter file for IEEE Transactions
-                         on Magnetics journal papers.
-
-bare_adv.tex           - A bare bones starter file showing advanced
-                         techniques such as conditional compilation,
-                         hyperlinks, PDF thumbnails, etc. The illustrated
-                         format is for a Computer Society journal paper.
-
-***************************************************************************
-Legal Notice:
-This code is offered as-is without any warranty either expressed or
-implied; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE! 
-User assumes all risk.
-In no event shall IEEE or any contributor to this code be liable for
-any damages or losses, including, but not limited to, incidental,
-consequential, or any other damages, resulting from the use or misuse
-of any information contained here.
-
-All comments are the opinions of their respective authors and are not
-necessarily endorsed by the IEEE.
-
-This work is distributed under the LaTeX Project Public License (LPPL)
-( http://www.latex-project.org/ ) version 1.3, and may be freely used,
-distributed and modified. A copy of the LPPL, version 1.3, is included
-in the base LaTeX documentation of all distributions of LaTeX released
-2003/12/01 or later.
-Retain all contribution notices and credits.
-** Modified files should be clearly indicated as such, including  **
-** renaming them and changing author support contact information. **
-
-File list of work: IEEEtran.cls, IEEEtran_HOWTO.pdf, bare_adv.tex,
-                   bare_conf.tex, bare_jrnl.tex, bare_jrnl_compsoc.tex,
-                   bare_jrnl_transmag.tex
-***************************************************************************
