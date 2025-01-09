@@ -1,7 +1,7 @@
 Jane Street Real-Time Market Data Forecasting
 ===
 
->關於時間戳資訊，請看以下連結[簡報](https://docs.google.com/presentation/d/14Q5oYMeH1Fol72u9mTZJKTykUL7JjUy15irrWQvLsDQ/edit?usp=sharing)
+>關於時間戳資訊，請看以下[簡報](https://docs.google.com/presentation/d/14Q5oYMeH1Fol72u9mTZJKTykUL7JjUy15irrWQvLsDQ/edit?usp=sharing)第15~17頁
 
 ### 討論大綱
 - **資料介紹及分割**
