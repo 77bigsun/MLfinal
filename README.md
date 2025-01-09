@@ -2,6 +2,7 @@ Jane Street Real-Time Market Data Forecasting
 ===
 
 >關於時間戳資訊，請看以下[簡報](https://docs.google.com/presentation/d/14Q5oYMeH1Fol72u9mTZJKTykUL7JjUy15irrWQvLsDQ/edit?usp=sharing)第15~17頁
+>我刪了訓練資料，有興趣參閱[Kaggle競賽](https://www.kaggle.com/competitions/jane-street-real-time-market-data-forecasting)
 
 ### 討論大綱
 - **資料介紹及分割**
